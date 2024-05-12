@@ -12,11 +12,17 @@ type EnvironmentEntry struct {
 	Value string `json:"value"`
 }
 
+// Struct that allows to run multiple commands in same conditions
 type Executor struct {
 	Workdir string
 	Env     []EnvironmentEntry
 }
 
+// Runs given command with provided input stream reader and writes its
+// output to outWriter and errors to errWriter.
+//
+// Returns error channel to determine when command is finished and
+// cancelation function to interrupt command.
 func (executor *Executor) RunScript(
 	ctx context.Context,
 
@@ -26,7 +32,7 @@ func (executor *Executor) RunScript(
 
 	command string,
 	args ...string,
-) <-chan error {
+) (<-chan error, func() error) {
 	cmd := exec.CommandContext(ctx, command, args...)
 	cmd.Env = parseEnv(executor.Env)
 	cmd.Dir = executor.Workdir
@@ -41,7 +47,7 @@ func (executor *Executor) RunScript(
 		isDone <- err
 	}()
 
-	return isDone
+	return isDone, cmd.Cancel
 }
 
 func parseEnv(entries []EnvironmentEntry) []string {
