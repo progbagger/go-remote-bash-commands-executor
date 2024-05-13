@@ -1,21 +1,17 @@
 package executor
 
 import (
+	"common"
 	"context"
 	"fmt"
 	"io"
 	"os/exec"
 )
 
-type EnvironmentEntry struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
-}
-
 // Struct that allows to run multiple commands in same conditions
 type Executor struct {
 	Workdir string
-	Env     []EnvironmentEntry
+	Env     []common.EnvironmentEntry
 }
 
 // Runs given command with provided input stream reader and writes its
@@ -50,7 +46,7 @@ func (executor *Executor) RunScript(
 	return isDone, cmd.Cancel
 }
 
-func parseEnv(entries []EnvironmentEntry) []string {
+func parseEnv(entries []common.EnvironmentEntry) []string {
 	if len(entries) == 0 {
 		return nil
 	}
