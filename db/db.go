@@ -1,6 +1,7 @@
 package db
 
 import (
+	"common"
 	"context"
 	"database/sql"
 	"fmt"
@@ -90,14 +91,15 @@ const (
 
 // Struct that represents database command record
 type CommandTableRecord struct {
-	Id      int64    `json:"id"`
-	Command string   `json:"command"`
-	Args    []string `json:"args"`
+	Id      int64  `json:"id"`
+	Command string `json:"command"`
 }
 
 type InputTableRecord struct {
-	Id    int64  `json:"id"`
-	Input string `json:"input"`
+	Id    int64                     `json:"id"`
+	Input string                    `json:"input"`
+	Args  []string                  `json:"args"`
+	Env   []common.EnvironmentEntry `json:"env"`
 }
 
 type OutputsTableRecord struct {
@@ -148,13 +150,13 @@ func (connection *Connection) GetCommands() ([]CommandTableRecord, error) {
 	return records, nil
 }
 
-func (connection *Connection) GetRecordById(recordId int64) (FullCommandRecord, error) {
+func (connection *Connection) GetFullRecordById(recordId int64) (FullCommandRecord, error) {
 	var record FullCommandRecord
 
 	row := connection.db.QueryRowContext(
 		createTimeoutDefaultContext(),
 		`
-			SELECT id, c.command, i.input, o.output, o.errors, s.exit_code, s.status
+			SELECT c.command, i.input, i.args, i.env, o.output, o.errors, s.exit_code, s.status
 			FROM commands AS c WHERE id = $1
 			JOIN inputs AS i ON c.id = i.id
 			JOIN outputs AS o ON c.id = o.id
@@ -164,14 +166,16 @@ func (connection *Connection) GetRecordById(recordId int64) (FullCommandRecord, 
 	)
 
 	err := row.Scan(
-		&record.Command.Id,
 		&record.Command.Command,
 		&record.Input.Input,
+		&record.Input.Args,
+		&record.Input.Env,
 		&record.Outputs.Output,
 		&record.Outputs.Errors,
 		&record.Statuses.ExitCode,
 		&record.Statuses.Status,
 	)
+	record.Command.Id = recordId
 	record.Input.Id = record.Command.Id
 	record.Outputs.Id = record.Command.Id
 	record.Statuses.Id = record.Command.Id
@@ -198,9 +202,11 @@ func (connection *Connection) InsertRecord(command CommandTableRecord, input Inp
 
 	_, err = tx.ExecContext(
 		createTimeoutDefaultContext(),
-		`INSERT INTO inputs VALUES ($1, $2)`,
+		`INSERT INTO inputs VALUES ($1, $2, $3, $4)`,
 		command.Id,
 		input.Input,
+		input.Args,
+		input.Env,
 	)
 	if err != nil {
 		tx.Rollback()
@@ -211,7 +217,42 @@ func (connection *Connection) InsertRecord(command CommandTableRecord, input Inp
 }
 
 func (connection *Connection) UpdateRecord(outputs *OutputsTableRecord, statuses StatusesTableRecord) error {
-	// TODO
+	tx, err := connection.db.BeginTx(createTimeoutDefaultContext(), nil)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.ExecContext(
+		createTimeoutDefaultContext(),
+		`
+			UPDATE outputs SET output = $2, errors = $3
+			WHERE id = $1
+		`,
+		outputs.Id,
+		outputs.Output,
+		outputs.Errors,
+	)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	_, err = tx.ExecContext(
+		createTimeoutDefaultContext(),
+		`
+			UPDATE statuses SET exit_code = $2, status = $3
+			WHERE id = $1
+		`,
+		statuses.Id,
+		statuses.ExitCode,
+		statuses.Status,
+	)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	return tx.Commit()
 }
 
 func createTimeoutDefaultContext() context.Context {

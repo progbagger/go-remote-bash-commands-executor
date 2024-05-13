@@ -1,12 +1,17 @@
 CREATE TABLE IF NOT EXISTS commands (
     id SERIAL PRIMARY KEY,
-    command TEXT NOT NULL,
-    args TEXT ARRAY
+    command TEXT NOT NULL
 );
+
+DROP TYPE IF EXISTS env_entry CASCADE;
+
+CREATE TYPE env_entry AS (key TEXT, value TEXT);
 
 CREATE TABLE IF NOT EXISTS inputs (
     id SERIAL REFERENCES commands (id),
-    input TEXT
+    input TEXT,
+    args TEXT ARRAY,
+    env env_entry ARRAY
 );
 
 CREATE TABLE IF NOT EXISTS outputs (
