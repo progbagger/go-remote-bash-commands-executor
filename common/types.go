@@ -1,0 +1,6 @@
+package common
+
+type EnvironmentEntry struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
