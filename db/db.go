@@ -115,22 +115,37 @@ func (connection *Connection) GetFullRecordById(recordId uint64) (FullCommandRec
 		createTimeoutDefaultContext(),
 		`
 			SELECT c.command, i.input, i.env, o.output, o.errors, s.exit_code
-			FROM commands AS c WHERE id = $1
+			FROM commands AS c
 			JOIN inputs AS i ON c.id = i.id
 			JOIN outputs AS o ON c.id = o.id
 			JOIN statuses AS s ON c.id = s.id
+			WHERE c.id = $1
 		`,
 		recordId,
 	)
 
+	nullableInput := sql.NullString{}
+	nullableOutput := sql.NullString{}
+	nullableErrors := sql.NullString{}
+	nullableExitCode := sql.NullInt32{}
+
 	err := row.Scan(
 		&record.Command.Command,
-		&record.Input.Input,
-		&record.Input.Env,
-		&record.Outputs.Output,
-		&record.Outputs.Errors,
-		&record.Statuses.ExitCode,
+		&nullableInput,
+		pq.Array(&record.Input.Env),
+		&nullableOutput,
+		&nullableErrors,
+		&nullableExitCode,
 	)
+	record.Input.Input = nullableInput.String
+	record.Outputs.Output = nullableOutput.String
+	record.Outputs.Errors = nullableErrors.String
+	if nullableExitCode.Valid {
+		record.Statuses.ExitCode = int(nullableExitCode.Int32)
+	} else {
+		record.Statuses.ExitCode = -2
+	}
+
 	record.Command.Id = recordId
 	record.Input.id = record.Command.Id
 	record.Outputs.id = record.Command.Id

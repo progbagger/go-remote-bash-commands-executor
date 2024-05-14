@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"strings"
 )
 
 // Struct that represents environment variable.
@@ -18,6 +19,23 @@ type EnvironmentEntry struct {
 // Method for postgresql to able to push such values into the database
 func (enrty EnvironmentEntry) Value() (driver.Value, error) {
 	return fmt.Sprintf("(%s,%s)", enrty.Key, enrty.Val), nil
+}
+
+func (entry *EnvironmentEntry) Scan(value any) error {
+	if b, ok := value.([]byte); ok {
+		splitted := strings.Split(strings.Trim(string(b), "()"), ",")
+		if len(splitted) != 2 {
+			return fmt.Errorf("unknown environment entry")
+		}
+
+		entry.Key = splitted[0]
+		entry.Val = splitted[1]
+	} else {
+		entry.Key = ""
+		entry.Val = ""
+	}
+
+	return nil
 }
 
 // Struct that allows to run multiple commands in same conditions
