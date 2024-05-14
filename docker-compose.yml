@@ -19,13 +19,18 @@ services:
     image: postgres
     environment:
       - POSTGRES_PASSWORD=postgres
+    volumes:
+      - ./configure_db.sql:/docker-entrypoint-initdb.d/configure_db.sql
     expose:
       - 5432
     ports:
       - 5432:5432
 
   runner:
-    image: bash
+    build:
+      dockerfile: Dockerfile
+      context: .
+      target: run
     depends_on:
       builder:
         condition: service_completed_successfully
@@ -40,7 +45,7 @@ services:
     working_dir: /usr/app
     environment:
       - POSTGRES_HOST=database
-    command: ./server.out --port=8888
+    # command: ./server.out --port=8888
 
 volumes:
   builds:

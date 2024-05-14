@@ -25,3 +25,7 @@ FROM base AS build
 RUN mkdir -p /usr/app
 
 CMD [ "go", "build", "-o", "/usr/app/server.out", "main.go" ]
+
+FROM build AS run
+
+CMD [ "/usr/app/server.out", "--port=8888" ]
