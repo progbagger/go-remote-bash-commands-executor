@@ -10,6 +10,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
+// Default postgresql connection values
 const (
 	DefaultUsername string = "postgres"
 	DefaultPassword string = "postgres"
@@ -19,12 +20,12 @@ const (
 	DefaultPort int    = 5432
 )
 
-const DefaultTimeout = time.Second * 30
+const defaultTimeout = time.Second * 30
 
 // Connection credentials.
 //
 // If anything is empty or 0 - it will be replaced with
-// default constant values.
+// default values.
 //
 //	Default username - "postgres"
 //	Default password - "postgres"
@@ -40,10 +41,13 @@ type Credentials struct {
 	Port int
 }
 
+// Struct that represents specified postgresql connection with specified
+// methods. Closing it isn't necessary.
 type Connection struct {
 	db *sql.DB
 }
 
+// Creates new Connection with provided credentials.
 func Open(credentials Credentials) (*Connection, error) {
 	checkDefaultCredentials(&credentials)
 	conn, err := sql.Open("postgres", fmt.Sprintf(
@@ -64,65 +68,12 @@ func Open(credentials Credentials) (*Connection, error) {
 	return connection, nil
 }
 
+// Closes opened connection. Call to this method is not necessary.
 func (connection *Connection) Close() error {
 	return connection.db.Close()
 }
 
-func checkDefaultCredentials(credentials *Credentials) {
-	if credentials.Username == "" {
-		credentials.Username = DefaultUsername
-	}
-	if credentials.Password == "" {
-		credentials.Password = DefaultPassword
-	}
-	if credentials.Host == "" {
-		credentials.Host = DefaultHost
-	}
-	if credentials.Port == 0 {
-		credentials.Port = DefaultPort
-	}
-}
-
-const (
-	RunningStatus     string = "RUNNING"
-	FinishedStatus    string = "FINISHED"
-	InterruptedStatus string = "INTERRUPTED"
-)
-
-// Struct that represents database command record
-type CommandTableRecord struct {
-	Id      int64  `json:"id"`
-	Command string `json:"command"`
-}
-
-type InputTableRecord struct {
-	Id    int64                     `json:"id"`
-	Input string                    `json:"input"`
-	Args  []string                  `json:"args"`
-	Env   []common.EnvironmentEntry `json:"env"`
-}
-
-type OutputsTableRecord struct {
-	Id int64 `json:"id"`
-
-	Output string `json:"output"`
-	Errors string `json:"errors"`
-}
-
-type StatusesTableRecord struct {
-	Id int64 `json:"id"`
-
-	ExitCode int    `json:"exit_code"`
-	Status   string `json:"status"`
-}
-
-type FullCommandRecord struct {
-	Command  CommandTableRecord  `json:"command_info"`
-	Input    InputTableRecord    `json:"input_info"`
-	Outputs  OutputsTableRecord  `json:"outputs"`
-	Statuses StatusesTableRecord `json:"statuses"`
-}
-
+// Returns an array of command strings stored in the database.
 func (connection *Connection) GetCommands() ([]CommandTableRecord, error) {
 	rows, err := connection.db.QueryContext(
 		createTimeoutDefaultContext(),
@@ -150,6 +101,8 @@ func (connection *Connection) GetCommands() ([]CommandTableRecord, error) {
 	return records, nil
 }
 
+// Returns fully populated data of launched or finished command that stores
+// in the database.
 func (connection *Connection) GetFullRecordById(recordId int64) (FullCommandRecord, error) {
 	var record FullCommandRecord
 
@@ -176,13 +129,14 @@ func (connection *Connection) GetFullRecordById(recordId int64) (FullCommandReco
 		&record.Statuses.Status,
 	)
 	record.Command.Id = recordId
-	record.Input.Id = record.Command.Id
-	record.Outputs.Id = record.Command.Id
-	record.Statuses.Id = record.Command.Id
+	record.Input.id = record.Command.Id
+	record.Outputs.id = record.Command.Id
+	record.Statuses.id = record.Command.Id
 
 	return record, err
 }
 
+// Pushes command and its inputs into the database.
 func (connection *Connection) InsertRecord(command CommandTableRecord, input InputTableRecord) (int64, error) {
 	tx, err := connection.db.BeginTx(createTimeoutDefaultContext(), nil)
 	if err != nil {
@@ -216,6 +170,7 @@ func (connection *Connection) InsertRecord(command CommandTableRecord, input Inp
 	return command.Id, tx.Commit()
 }
 
+// Updates launched command's outputs and statuses.
 func (connection *Connection) UpdateRecord(outputs *OutputsTableRecord, statuses StatusesTableRecord) error {
 	tx, err := connection.db.BeginTx(createTimeoutDefaultContext(), nil)
 	if err != nil {
@@ -228,7 +183,7 @@ func (connection *Connection) UpdateRecord(outputs *OutputsTableRecord, statuses
 			UPDATE outputs SET output = $2, errors = $3
 			WHERE id = $1
 		`,
-		outputs.Id,
+		outputs.id,
 		outputs.Output,
 		outputs.Errors,
 	)
@@ -243,7 +198,7 @@ func (connection *Connection) UpdateRecord(outputs *OutputsTableRecord, statuses
 			UPDATE statuses SET exit_code = $2, status = $3
 			WHERE id = $1
 		`,
-		statuses.Id,
+		statuses.id,
 		statuses.ExitCode,
 		statuses.Status,
 	)
@@ -255,10 +210,71 @@ func (connection *Connection) UpdateRecord(outputs *OutputsTableRecord, statuses
 	return tx.Commit()
 }
 
+const (
+	RunningStatus     string = "RUNNING"
+	FinishedStatus    string = "FINISHED"
+	InterruptedStatus string = "INTERRUPTED"
+)
+
+// Struct that represents essential command info in the "commands" table.
+type CommandTableRecord struct {
+	Id int64 `json:"id"`
+
+	Command string `json:"command"`
+}
+
+// Struct that represents command's inputs in the "inputs" table.
+type InputTableRecord struct {
+	id int64
+
+	Input string                    `json:"input"`
+	Args  []string                  `json:"args"`
+	Env   []common.EnvironmentEntry `json:"env"`
+}
+
+// Struct that represents command's outputs in the "outputs" table.
+type OutputsTableRecord struct {
+	id int64
+
+	Output string `json:"output"`
+	Errors string `json:"errors"`
+}
+
+// Struct that represents command's results in the "statuses" table.
+type StatusesTableRecord struct {
+	id int64
+
+	ExitCode int    `json:"exit_code"`
+	Status   string `json:"status"`
+}
+
+// Struct that stores full command info.
+type FullCommandRecord struct {
+	Command  CommandTableRecord  `json:"command_info"`
+	Input    InputTableRecord    `json:"input_info"`
+	Outputs  OutputsTableRecord  `json:"outputs"`
+	Statuses StatusesTableRecord `json:"statuses"`
+}
+
+func checkDefaultCredentials(credentials *Credentials) {
+	if credentials.Username == "" {
+		credentials.Username = DefaultUsername
+	}
+	if credentials.Password == "" {
+		credentials.Password = DefaultPassword
+	}
+	if credentials.Host == "" {
+		credentials.Host = DefaultHost
+	}
+	if credentials.Port == 0 {
+		credentials.Port = DefaultPort
+	}
+}
+
 func createTimeoutDefaultContext() context.Context {
 	ctx, _ := context.WithTimeoutCause(
 		context.Background(),
-		DefaultTimeout,
+		defaultTimeout,
 		fmt.Errorf("operation timed out"),
 	)
 
