@@ -52,13 +52,13 @@ Result will be looking like that (empty values will be omitted):
 
 ```json
 {
-  "command": "echo $this_is_the_key | cat -", // command itself
-  "env": [ // environment variables that parses as "key"="value"
+  "command": "echo $this_is_the_key | cat -",
+  "env": [
     "key": "this_is_the_key",
     "value": "this_is_the_value"
   ],
-  "input": "this_is_the_stdin", // command stdin
-  "workdir": "/home" // working directory of the command
+  "input": "this_is_the_stdin",
+  "workdir": "/home"
 }
 ```
 
