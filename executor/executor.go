@@ -58,7 +58,7 @@ func (executor *Executor) RunScript(
 
 	command string,
 ) <-chan error {
-	cmd := exec.CommandContext(ctx, "/bin/bash", "-c", command)
+	cmd := exec.CommandContext(ctx, "bash", "-c", command)
 	cmd.Env = parseEnv(executor.Env)
 	cmd.Dir = executor.Workdir
 

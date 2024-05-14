@@ -64,6 +64,11 @@ func (handler *ExecuteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	if requestBody.Command == "" {
+		writeBadRequestError(fmt.Errorf("\"command\" parameter must be not empty"), w, r)
+		return
+	}
+
 	// writing database record
 	id, err := handler.conn.InsertRecord(
 		db.CommandTableRecord{Command: requestBody.Command},
