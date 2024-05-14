@@ -1,17 +1,29 @@
 package executor
 
 import (
-	"common"
 	"context"
+	"database/sql/driver"
 	"fmt"
 	"io"
 	"os/exec"
 )
 
+// Struct that represents environment variable.
+// Will be parsed by executor in form of "Key"="Value".
+type EnvironmentEntry struct {
+	Key string `json:"key"`
+	Val string `json:"value"`
+}
+
+// Method for postgresql to able to push such values into the database
+func (enrty EnvironmentEntry) Value() (driver.Value, error) {
+	return fmt.Sprintf("(%s,%s)", enrty.Key, enrty.Val), nil
+}
+
 // Struct that allows to run multiple commands in same conditions
 type Executor struct {
 	Workdir string
-	Env     []common.EnvironmentEntry
+	Env     []EnvironmentEntry
 }
 
 // Runs given command with provided input stream reader and writes its
@@ -27,9 +39,8 @@ func (executor *Executor) RunScript(
 	errWriter io.Writer,
 
 	command string,
-	args ...string,
-) (<-chan error, func() error) {
-	cmd := exec.CommandContext(ctx, command, args...)
+) <-chan error {
+	cmd := exec.CommandContext(ctx, "/bin/bash", "-c", command)
 	cmd.Env = parseEnv(executor.Env)
 	cmd.Dir = executor.Workdir
 
@@ -43,17 +54,17 @@ func (executor *Executor) RunScript(
 		isDone <- err
 	}()
 
-	return isDone, cmd.Cancel
+	return isDone
 }
 
-func parseEnv(entries []common.EnvironmentEntry) []string {
+func parseEnv(entries []EnvironmentEntry) []string {
 	if len(entries) == 0 {
 		return nil
 	}
 
 	result := make([]string, 0, len(entries))
 	for _, entry := range entries {
-		result = append(result, fmt.Sprintf("%s=%s", entry.Key, entry.Value))
+		result = append(result, fmt.Sprintf("%s=%s", entry.Key, entry.Val))
 	}
 
 	return result

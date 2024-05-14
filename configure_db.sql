@@ -10,7 +10,6 @@ CREATE TYPE env_entry AS (key TEXT, value TEXT);
 CREATE TABLE IF NOT EXISTS inputs (
     id SERIAL REFERENCES commands (id),
     input TEXT,
-    args TEXT ARRAY,
     env env_entry ARRAY
 );
 
@@ -22,8 +21,7 @@ CREATE TABLE IF NOT EXISTS outputs (
 
 CREATE TABLE IF NOT EXISTS statuses (
     id SERIAL REFERENCES commands (id),
-    exit_code INTEGER,
-    status TEXT NOT NULL
+    exit_code INTEGER
 );
 
 CREATE OR REPLACE FUNCTION outputs_statuses_trigger_fnc()
@@ -33,9 +31,8 @@ BEGIN
 INSERT INTO outputs (id) VALUES (
   NEW.id
 );
-INSERT INTO statuses (id, status) VALUES (
-  NEW.id,
-  'RUNNING'
+INSERT INTO statuses (id) VALUES (
+  NEW.id
 );
 RETURN NEW;
 END;

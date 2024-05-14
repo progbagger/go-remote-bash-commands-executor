@@ -1,13 +1,13 @@
 package db
 
 import (
-	"common"
 	"context"
 	"database/sql"
+	"executor"
 	"fmt"
 	"time"
 
-	_ "github.com/lib/pq"
+	pq "github.com/lib/pq"
 )
 
 // Default postgresql connection values
@@ -51,7 +51,7 @@ type Connection struct {
 func Open(credentials Credentials) (*Connection, error) {
 	checkDefaultCredentials(&credentials)
 	conn, err := sql.Open("postgres", fmt.Sprintf(
-		"user='%s' password='%s' dbname='%s' host='%s' port='%d' connect_timeout=30",
+		"user='%s' password='%s' dbname='%s' host='%s' port='%d' connect_timeout=30 sslmode=disable",
 		credentials.Username,
 		credentials.Password,
 		credentials.Database,
@@ -59,6 +59,11 @@ func Open(credentials Credentials) (*Connection, error) {
 		credentials.Port,
 	))
 
+	if err != nil {
+		return nil, err
+	}
+
+	err = conn.Ping()
 	if err != nil {
 		return nil, err
 	}
@@ -103,13 +108,13 @@ func (connection *Connection) GetCommands() ([]CommandTableRecord, error) {
 
 // Returns fully populated data of launched or finished command that stores
 // in the database.
-func (connection *Connection) GetFullRecordById(recordId int64) (FullCommandRecord, error) {
+func (connection *Connection) GetFullRecordById(recordId uint64) (FullCommandRecord, error) {
 	var record FullCommandRecord
 
 	row := connection.db.QueryRowContext(
 		createTimeoutDefaultContext(),
 		`
-			SELECT c.command, i.input, i.args, i.env, o.output, o.errors, s.exit_code, s.status
+			SELECT c.command, i.input, i.env, o.output, o.errors, s.exit_code
 			FROM commands AS c WHERE id = $1
 			JOIN inputs AS i ON c.id = i.id
 			JOIN outputs AS o ON c.id = o.id
@@ -121,12 +126,10 @@ func (connection *Connection) GetFullRecordById(recordId int64) (FullCommandReco
 	err := row.Scan(
 		&record.Command.Command,
 		&record.Input.Input,
-		&record.Input.Args,
 		&record.Input.Env,
 		&record.Outputs.Output,
 		&record.Outputs.Errors,
 		&record.Statuses.ExitCode,
-		&record.Statuses.Status,
 	)
 	record.Command.Id = recordId
 	record.Input.id = record.Command.Id
@@ -137,10 +140,10 @@ func (connection *Connection) GetFullRecordById(recordId int64) (FullCommandReco
 }
 
 // Pushes command and its inputs into the database.
-func (connection *Connection) InsertRecord(command CommandTableRecord, input InputTableRecord) (int64, error) {
+func (connection *Connection) InsertRecord(command CommandTableRecord, input InputTableRecord) (uint64, error) {
 	tx, err := connection.db.BeginTx(createTimeoutDefaultContext(), nil)
 	if err != nil {
-		return -1, err
+		return 0, err
 	}
 
 	row := tx.QueryRowContext(
@@ -156,11 +159,10 @@ func (connection *Connection) InsertRecord(command CommandTableRecord, input Inp
 
 	_, err = tx.ExecContext(
 		createTimeoutDefaultContext(),
-		`INSERT INTO inputs VALUES ($1, $2, $3, $4)`,
+		`INSERT INTO inputs VALUES ($1, $2, $3)`,
 		command.Id,
 		input.Input,
-		input.Args,
-		input.Env,
+		pq.Array(input.Env),
 	)
 	if err != nil {
 		tx.Rollback()
@@ -171,10 +173,24 @@ func (connection *Connection) InsertRecord(command CommandTableRecord, input Inp
 }
 
 // Updates launched command's outputs and statuses.
-func (connection *Connection) UpdateRecord(outputs *OutputsTableRecord, statuses StatusesTableRecord) error {
+func (connection *Connection) UpdateRecord(
+	recordId uint64,
+	outputs *OutputsTableRecord,
+	statuses StatusesTableRecord,
+) error {
 	tx, err := connection.db.BeginTx(createTimeoutDefaultContext(), nil)
 	if err != nil {
 		return err
+	}
+
+	output, errors := sql.NullString{}, sql.NullString{}
+	if outputs.Output != "" {
+		output.String = outputs.Output
+		output.Valid = true
+	}
+	if outputs.Errors != "" {
+		errors.String = outputs.Errors
+		errors.Valid = true
 	}
 
 	_, err = tx.ExecContext(
@@ -183,24 +199,29 @@ func (connection *Connection) UpdateRecord(outputs *OutputsTableRecord, statuses
 			UPDATE outputs SET output = $2, errors = $3
 			WHERE id = $1
 		`,
-		outputs.id,
-		outputs.Output,
-		outputs.Errors,
+		recordId,
+		output,
+		errors,
 	)
 	if err != nil {
 		tx.Rollback()
 		return err
 	}
 
+	exitCode := sql.NullInt32{}
+	if statuses.ExitCode != -2 {
+		exitCode.Int32 = int32(statuses.ExitCode)
+		exitCode.Valid = true
+	}
+
 	_, err = tx.ExecContext(
 		createTimeoutDefaultContext(),
 		`
-			UPDATE statuses SET exit_code = $2, status = $3
+			UPDATE statuses SET exit_code = $2
 			WHERE id = $1
 		`,
-		statuses.id,
-		statuses.ExitCode,
-		statuses.Status,
+		recordId,
+		exitCode,
 	)
 	if err != nil {
 		tx.Rollback()
@@ -210,31 +231,24 @@ func (connection *Connection) UpdateRecord(outputs *OutputsTableRecord, statuses
 	return tx.Commit()
 }
 
-const (
-	RunningStatus     string = "RUNNING"
-	FinishedStatus    string = "FINISHED"
-	InterruptedStatus string = "INTERRUPTED"
-)
-
 // Struct that represents essential command info in the "commands" table.
 type CommandTableRecord struct {
-	Id int64 `json:"id"`
+	Id uint64 `json:"id"`
 
 	Command string `json:"command"`
 }
 
 // Struct that represents command's inputs in the "inputs" table.
 type InputTableRecord struct {
-	id int64
+	id uint64
 
-	Input string                    `json:"input"`
-	Args  []string                  `json:"args"`
-	Env   []common.EnvironmentEntry `json:"env"`
+	Input string                      `json:"input"`
+	Env   []executor.EnvironmentEntry `json:"env"`
 }
 
 // Struct that represents command's outputs in the "outputs" table.
 type OutputsTableRecord struct {
-	id int64
+	id uint64
 
 	Output string `json:"output"`
 	Errors string `json:"errors"`
@@ -242,10 +256,9 @@ type OutputsTableRecord struct {
 
 // Struct that represents command's results in the "statuses" table.
 type StatusesTableRecord struct {
-	id int64
+	id uint64
 
-	ExitCode int    `json:"exit_code"`
-	Status   string `json:"status"`
+	ExitCode int `json:"exit_code"`
 }
 
 // Struct that stores full command info.
