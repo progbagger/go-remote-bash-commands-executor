@@ -8,8 +8,8 @@ Server that provides an **API** to execute bash-scripts remotely on the server a
 
 API has a few endpoints:
 
-- `/api/commands` - fetches all launched commands
-- `/api/get_command?id=<id>` - gets full indormation about command with provided ID
+- `/api/commands` - **GET** - fetches all launched commands
+- `/api/get_command?id=<id>` - **GET** - gets full indormation about command with provided ID
 
 Result will be looking like that (empty values will be omitted):
 
@@ -48,7 +48,7 @@ Result will be looking like that (empty values will be omitted):
 ]
 ```
 
-- `/api/launch` - launches new command on the server. Accepts request body:
+- `/api/launch` - **POST** - launches new command on the server. Accepts request body:
 
 ```json
 {
@@ -64,7 +64,7 @@ Result will be looking like that (empty values will be omitted):
 
 Only necessary parameter is `command`.
 
-- `/api/cancel?id=<id>` - cancels execution of the command with provided ID
+- `/api/cancel?id=<id>` - **POST** - cancels execution of the command with provided ID
 
 If command is long enough, then **every 5 seconds** its *stdout* and *stderr* updates and sends into the database.
 
@@ -114,32 +114,6 @@ Database consists of 4 tables:
 Upon succesful insertion into `commands` table appropriate amount of empty records are inserted into tables `outputs` and `statuses`.
 
 ## Launching
-
-### Tests
-
-Only testet package - **executor** as a heart of this appliction.
-
-```shell
-go test executor
-```
-
-### Manual building and launching
-
-```shell
-# build
-go build -o server.out main.go
-
-# run
-
-# this is default values, omit them if
-# your config is the same
-POSTGRES_PASSWORD=password \
-POSTGRES_USER=postgres \
-POSTGRES_DATABASE=postgres \
-POSTGRES_HOST=localhost \
-POSTGRES_PORT=5432 \
-./server.out --port=8888
-```
 
 ### docker-compose
 
