@@ -33,6 +33,7 @@ Result will be looking like that (empty values will be omitted):
   },
     {
     "command_info": {
+      "id": id,
       "command": "command2"
     },
     "input_info": {
