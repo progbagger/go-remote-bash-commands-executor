@@ -1,0 +1,46 @@
+version: "3"
+
+services:
+  builder:
+    build:
+      dockerfile: Dockerfile
+      context: .
+      target: build
+    volumes:
+      - builds:/usr/app
+
+  tester:
+    build:
+      dockerfile: Dockerfile
+      context: .
+      target: test
+
+  database:
+    image: postgres
+    environment:
+      - POSTGRES_PASSWORD=postgres
+    expose:
+      - 5432
+    ports:
+      - 5432:5432
+
+  runner:
+    image: bash
+    depends_on:
+      builder:
+        condition: service_completed_successfully
+      tester:
+        condition: service_completed_successfully
+      database:
+        condition: service_started
+    volumes:
+      - builds:/usr/app
+    ports:
+      - 8888:8888
+    working_dir: /usr/app
+    environment:
+      - POSTGRES_HOST=database
+    command: ./server.out --port=8888
+
+volumes:
+  builds:
